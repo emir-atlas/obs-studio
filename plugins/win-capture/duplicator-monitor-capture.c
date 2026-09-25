@@ -425,6 +425,13 @@ extern bool graphics_uses_d3d11;
 static void *duplicator_capture_create(obs_data_t *settings, obs_source_t *source)
 {
 	struct duplicator_capture *capture;
+	if (strcmp(obs_source_get_id(source), "noxlink_display_capture") == 0) {
+		const char *monitor_id = obs_data_get_string(settings, "monitor_id");
+		const int method = (int)obs_data_get_int(settings, "method");
+		if (!monitor_id || !*monitor_id || !find_monitor(monitor_id).handle ||
+		    (method != METHOD_DXGI && method != METHOD_WGC) || (method == METHOD_WGC && !wgc_supported))
+			return NULL;
+	}
 
 	capture = bzalloc(sizeof(struct duplicator_capture));
 	capture->source = source;

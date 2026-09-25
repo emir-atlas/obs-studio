@@ -144,10 +144,11 @@ bool obs_module_load(void)
 
 	/* NoxLink uses a separate source ID so its capture contract can be
 	 * verified without relying on OBS UI source names or window matching. */
-	struct obs_source_info noxlink_display_capture_info =
-		win8_or_above && graphics_uses_d3d11 ? duplicator_capture_info : monitor_capture_info;
-	noxlink_display_capture_info.id = "noxlink_display_capture";
-	obs_register_source(&noxlink_display_capture_info);
+	if (win8_or_above && graphics_uses_d3d11) {
+		struct obs_source_info noxlink_display_capture_info = duplicator_capture_info;
+		noxlink_display_capture_info.id = "noxlink_display_capture";
+		obs_register_source(&noxlink_display_capture_info);
+	}
 
 	obs_register_source(&window_capture_info);
 	struct obs_source_info noxlink_window_capture_info = window_capture_info;

@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <stdint.h>
 #include <util/dstr.h>
 #include <util/threading.h>
 #include <util/windows/window-helpers.h>
@@ -82,6 +83,8 @@ struct window_capture {
 	char *title;
 	char *class;
 	char *executable;
+	uintptr_t noxlink_window;
+	DWORD noxlink_pid;
 	enum window_capture_method method;
 	enum window_priority priority;
 	bool cursor;
@@ -216,6 +219,13 @@ static void update_settings(struct window_capture *wc, obs_data_t *s)
 	bfree(wc->executable);
 
 	ms_build_window_strings(window, &wc->class, &wc->title, &wc->executable);
+	if (strcmp(obs_source_get_id(wc->source), "noxlink_window_capture") == 0) {
+		wc->noxlink_window = (uintptr_t)obs_data_get_int(s, "noxlink_hwnd");
+		wc->noxlink_pid = (DWORD)obs_data_get_int(s, "noxlink_pid");
+	} else {
+		wc->noxlink_window = 0;
+		wc->noxlink_pid = 0;
+	}
 
 	wc->method = choose_method(method, wgc_supported, wc->class);
 	wc->priority = (enum window_priority)priority;
@@ -300,6 +310,11 @@ extern bool graphics_uses_d3d11;
 
 static void *wc_create(obs_data_t *settings, obs_source_t *source)
 {
+	if (strcmp(obs_source_get_id(source), "noxlink_window_capture") == 0 &&
+	    (!wgc_supported || obs_data_get_int(settings, "noxlink_hwnd") <= 0 ||
+	     obs_data_get_int(settings, "noxlink_pid") <= 0))
+		return NULL;
+
 	struct window_capture *wc = bzalloc(sizeof(struct window_capture));
 	wc->source = source;
 
@@ -594,6 +609,12 @@ static void wc_tick(void *data, float seconds)
 
 	if (!obs_source_showing(wc->source))
 		return;
+	if (wc->noxlink_window && wc->window) {
+		DWORD actual_pid = 0;
+		if ((uintptr_t)wc->window != wc->noxlink_window || !IsWindow(wc->window) ||
+		    !GetWindowThreadProcessId(wc->window, &actual_pid) || actual_pid != wc->noxlink_pid)
+			wc->window = NULL;
+	}
 
 	if (!wc->window || !IsWindow(wc->window)) {
 		if (wc->hooked) {
@@ -606,7 +627,7 @@ static void wc_tick(void *data, float seconds)
 			calldata_free(&data);
 		}
 
-		if (!wc->title && !wc->class) {
+		if (!wc->title && !wc->class && !wc->noxlink_window) {
 			if (wc->capture.valid)
 				dc_capture_free(&wc->capture);
 			return;
@@ -627,10 +648,19 @@ static void wc_tick(void *data, float seconds)
 
 		wc->check_window_timer = 0.0f;
 
-		wc->window = (wc->method == METHOD_WGC) ? ms_find_window_top_level(INCLUDE_MINIMIZED, wc->priority,
-										   wc->class, wc->title, wc->executable)
-							: ms_find_window(INCLUDE_MINIMIZED, wc->priority, wc->class,
-									 wc->title, wc->executable);
+		if (wc->noxlink_window) {
+			HWND target = (HWND)wc->noxlink_window;
+			DWORD actual_pid = 0;
+			wc->window = IsWindow(target) && GetWindowThreadProcessId(target, &actual_pid) &&
+					     actual_pid == wc->noxlink_pid
+					     ? target
+					     : NULL;
+		} else {
+			wc->window = (wc->method == METHOD_WGC) ? ms_find_window_top_level(INCLUDE_MINIMIZED, wc->priority,
+											wc->class, wc->title, wc->executable)
+								: ms_find_window(INCLUDE_MINIMIZED, wc->priority, wc->class,
+										 wc->title, wc->executable);
+		}
 		if (!wc->window) {
 			if (wc->capture.valid)
 				dc_capture_free(&wc->capture);

@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.28...3.30)
 
 option(ENABLE_PLUGINS "Enable building OBS plugins" ON)
+option(NOXLINK_CAPTURE_ONLY "Build the NoxLink Windows capture plugin without OBS frontend plugins" OFF)
 
 if(NOT ENABLE_PLUGINS)
   set_property(GLOBAL APPEND PROPERTY OBS_FEATURES_DISABLED "Plugin Support")
@@ -8,6 +9,14 @@ if(NOT ENABLE_PLUGINS)
 endif()
 
 set_property(GLOBAL APPEND PROPERTY OBS_FEATURES_ENABLED "Plugin Support")
+
+if(NOXLINK_CAPTURE_ONLY)
+  if(NOT OS_WINDOWS)
+    message(FATAL_ERROR "NoxLink capture-only build requires Windows")
+  endif()
+  add_subdirectory(win-capture)
+  return()
+endif()
 
 macro(check_obs_browser)
   if((OS_WINDOWS AND CMAKE_VS_PLATFORM_NAME MATCHES "(ARM64|x64)") OR OS_MACOS OR OS_LINUX)
